@@ -149,7 +149,7 @@ export class SimpleHandler extends SimpleHandlerDefinition {
         writeHead(response, this.status, this.statusMessage, this.headers);
 
         if (isSerializedBuffer(this.data)) {
-            this.data = Buffer.from(<any> this.data);
+            this.data = Buffer.from(<any>this.data);
         }
 
         response.end(this.data || "");
@@ -222,11 +222,13 @@ export class CallbackHandler extends CallbackHandlerDefinition {
                 | WithSerializedCallbackBuffers<CallbackResponseMessageResult>
                 | 'close'
                 | 'reset'
-            >({ args: [
-                (version || -1) >= 2
-                    ? withSerializedBodyReader(request)
-                    : request // Backward compat: old handlers
-            ] });
+            >({
+                args: [
+                    (version || -1) >= 2
+                        ? withSerializedBodyReader(request)
+                        : request // Backward compat: old handlers
+                ]
+            });
 
             if (typeof callbackResult === 'string') {
                 return callbackResult;
@@ -275,9 +277,9 @@ export class StreamHandler extends StreamHandlerDefinition {
 
                 let deserializedEventData = content && (
                     content.type === 'string' ? content.value :
-                    content.type === 'buffer' ? Buffer.from(content.value, 'base64') :
-                    content.type === 'arraybuffer' ? Buffer.from(decodeBase64(content.value)) :
-                    content.type === 'nil' && undefined
+                        content.type === 'buffer' ? Buffer.from(content.value, 'base64') :
+                            content.type === 'arraybuffer' ? Buffer.from(decodeBase64(content.value)) :
+                                content.type === 'nil' && undefined
                 );
 
                 if (event === 'data' && deserializedEventData) {
@@ -416,7 +418,7 @@ export class PassThroughHandler extends PassThroughHandlerDefinition {
         let { protocol, hostname, port, path } = url.parse(reqUrl);
 
         // Check if this request is a request loop:
-        if (isSocketLoop(this.outgoingSockets, (<any> clientReq).socket)) {
+        if (isSocketLoop(this.outgoingSockets, (<any>clientReq).socket)) {
             throw new Error(oneLine`
                 Passthrough loop detected. This probably means you're sending a request directly
                 to a passthrough endpoint, which is forwarding it to the target URL, which is a
@@ -585,7 +587,7 @@ export class PassThroughHandler extends PassThroughHandlerDefinition {
 
             if (modifiedReq?.response) {
                 if (modifiedReq.response === 'close') {
-                    const socket: net.Socket = (<any> clientReq).socket;
+                    const socket: net.Socket = (<any>clientReq).socket;
                     socket.end();
                     throw new AbortError('Connection closed intentionally by rule');
                 } else if (modifiedReq.response === 'reset') {
@@ -612,8 +614,8 @@ export class PassThroughHandler extends PassThroughHandlerDefinition {
                     // If not overridden, we fall back to the original value, but we need to handle changes that forwarding
                     // might have made as well, especially if it's intentionally left URL & headers out of sync:
                     this.forwarding?.updateHostHeader === false
-                    ? clientReq.url
-                    : reqUrl
+                        ? clientReq.url
+                        : reqUrl
                 );
 
             Object.assign(headers,
@@ -648,7 +650,7 @@ export class PassThroughHandler extends PassThroughHandlerDefinition {
             rawHeaders = objectHeadersToRaw(headers);
         }
 
-        const strictHttpsChecks = shouldUseStrictHttps(hostname!, port!, this. ignoreHostHttpsErrors);
+        const strictHttpsChecks = shouldUseStrictHttps(hostname!, port!, this.ignoreHostHttpsErrors);
 
         // Use a client cert if it's listed for the host+port or whole hostname
         const hostWithPort = `${hostname}:${port}`;
@@ -709,11 +711,11 @@ export class PassThroughHandler extends PassThroughHandlerDefinition {
                         e.causedByUpstreamError = !(e instanceof TypeError);
                         throw e;
                     })
-            // HTTP/1 + TLS
-            : protocol === 'https:'
-                ? https.request
-            // HTTP/1 plaintext:
-                : http.request
+                // HTTP/1 + TLS
+                : protocol === 'https:'
+                    ? https.request
+                    // HTTP/1 plaintext:
+                    : http.request
         ) as typeof https.request;
 
         if (isH2Downstream && shouldTryH2Upstream) {
@@ -945,7 +947,11 @@ export class PassThroughHandler extends PassThroughHandlerDefinition {
 
                     resolve();
                 } else {
-                    serverRes.pipe(clientRes);
+                    if (this.beforeResponseStream) {
+                        this.beforeResponseStream(clientReq, serverRes, clientRes);
+                    } else {
+                        serverRes.pipe(clientRes);
+                    }
                     serverRes.once('end', resolve);
                 }
             })().catch(reject));
@@ -1165,7 +1171,7 @@ export class PassThroughHandler extends PassThroughHandlerDefinition {
 
 export class CloseConnectionHandler extends CloseConnectionHandlerDefinition {
     async handle(request: OngoingRequest) {
-        const socket: net.Socket = (<any> request).socket;
+        const socket: net.Socket = (<any>request).socket;
         socket.end();
         throw new AbortError('Connection closed intentionally by rule');
     }
@@ -1195,14 +1201,14 @@ export class ResetConnectionHandler extends ResetConnectionHandlerDefinition {
 export class TimeoutHandler extends TimeoutHandlerDefinition {
     async handle() {
         // Do nothing, leaving the socket open but never sending a response.
-        return new Promise<void>(() => {});
+        return new Promise<void>(() => { });
     }
 }
 
 export class JsonRpcResponseHandler extends JsonRpcResponseHandlerDefinition {
     async handle(request: OngoingRequest, response: OngoingResponse) {
         const data: any = await request.body.asJson()
-            .catch(() => {}); // Handle parsing errors with the check below
+            .catch(() => { }); // Handle parsing errors with the check below
 
         if (!data || data.jsonrpc !== '2.0' || !('id' in data)) { // N.B. id can be null
             throw new Error("Can't send a JSON-RPC response to an invalid JSON-RPC request");

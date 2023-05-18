@@ -86,6 +86,38 @@ nodeOnly(() => {
                 beforeEach(() => targetServer.start());
                 afterEach(() => targetServer.stop());
 
+                it.only("should support manually piping a response stream", async () => {
+                    targetServer.forPost('/some-endpoint').thenCallback(async (req) => ({
+                        statusCode: 200,
+                        body: `response, body: ${await req.body.getText()}`,
+                        headers: { 'my-header': 'real value' }
+                    }));
+
+                    await remoteServer.forGet(targetServer.url).thenPassThrough({
+                        beforeRequest: (req) => ({
+                            method: 'POST',
+                            url: req.url.replace(/\/$/, '/some-endpoint'),
+                            body: 'injected'
+                        }),
+                        beforeResponseStream: (req, serverRes, clientRes) => {
+                            serverRes.pipe(clientRes);
+                        },
+                    });
+
+                    const response = await request.get(targetServer.url, {
+                        proxy: remoteServer.urlFor("/"),
+                        resolveWithFullResponse: true
+                    });
+
+                    expect(response.statusCode).to.equal(200);
+                    expect(response.headers).to.include({
+                        'my-header': 'real value',
+                    });
+                    expect(response.body).to.equal(
+                        'response, body: injected'
+                    );
+                });
+
                 it("should successfully rewrite requests with live callbacks", async () => {
                     targetServer.forPost('/different-endpoint').thenCallback(async (req) => ({
                         statusCode: 200,
@@ -484,7 +516,7 @@ nodeOnly(() => {
                 let server: net.Server;
 
                 beforeEach(async () => {
-                    server = net.createServer(() => {});
+                    server = net.createServer(() => { });
                     port = await portfinder.getPortPromise();
                     return new Promise<void>(resolve => server.listen(port, resolve));
                 });
@@ -650,7 +682,7 @@ nodeOnly(() => {
 
             it("should keep the websocket subscription stream alive", async () => {
                 // We have to subscribe to something to create the websocket:
-                await client.on('request', () => {});
+                await client.on('request', () => { });
 
                 const id = getClientSessionId(client);
                 const subWsServer: Ws.Server = (adminServer as any)
@@ -792,7 +824,7 @@ nodeOnly(() => {
                 })).to.eventually.not.equal(undefined);
 
                 // Check the standard on() subscriptions work OK too:
-                await expect(client.on('response', () => {})).to.eventually.equal(undefined);
+                await expect(client.on('response', () => { })).to.eventually.equal(undefined);
             });
         });
 

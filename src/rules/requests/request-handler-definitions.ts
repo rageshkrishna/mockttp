@@ -4,13 +4,16 @@ import type * as net from 'net';
 import { encode as encodeBase64 } from 'base64-arraybuffer';
 import { Readable, Transform } from 'stream';
 import { stripIndent } from 'common-tags';
+import http = require('http');
 
 import {
     Headers,
     CompletedRequest,
     CompletedBody,
     Explainable,
-    RawHeaders
+    RawHeaders,
+    OngoingRequest,
+    OngoingResponse
 } from "../../types";
 
 import { MaybePromise, Replace } from '../../util/type-utils';
@@ -265,7 +268,7 @@ export class SimpleHandlerDefinition extends Serializable implements RequestHand
 
     explain() {
         return `respond with status ${this.status}` +
-            (this.statusMessage ? ` (${this.statusMessage})`: "") +
+            (this.statusMessage ? ` (${this.statusMessage})` : "") +
             (this.headers ? `, headers ${JSON.stringify(this.headers)}` : "") +
             (this.data ? ` and body "${this.data}"` : "");
     }
@@ -381,22 +384,22 @@ export class StreamHandlerDefinition extends Serializable implements RequestHand
             transform: function (this: Transform, chunk, _encoding, callback) {
                 let serializedEventData: StreamHandlerEventMessage | false =
                     _.isString(chunk) ? { type: 'string', value: chunk } :
-                    _.isBuffer(chunk) ? { type: 'buffer', value: chunk.toString('base64') } :
-                    (_.isArrayBuffer(chunk) || _.isTypedArray(chunk)) ? { type: 'arraybuffer', value: encodeBase64(<any> chunk) } :
-                    _.isNil(chunk) && { type: 'nil' };
+                        _.isBuffer(chunk) ? { type: 'buffer', value: chunk.toString('base64') } :
+                            (_.isArrayBuffer(chunk) || _.isTypedArray(chunk)) ? { type: 'arraybuffer', value: encodeBase64(<any>chunk) } :
+                                _.isNil(chunk) && { type: 'nil' };
 
                 if (!serializedEventData) {
                     callback(new Error(`Can't serialize streamed value: ${chunk.toString()}. Streaming must output strings, buffers or array buffers`));
                 }
 
-                callback(undefined, <StreamHandlerMessage> {
+                callback(undefined, <StreamHandlerMessage>{
                     event: 'data',
                     content: serializedEventData
                 });
             },
 
-            flush: function(this: Transform, callback) {
-                this.push(<StreamHandlerMessage> {
+            flush: function (this: Transform, callback) {
+                this.push(<StreamHandlerMessage>{
                     event: 'end'
                 });
                 callback();
@@ -428,7 +431,7 @@ export class FileHandlerDefinition extends Serializable implements RequestHandle
 
     explain() {
         return `respond with status ${this.status}` +
-            (this.statusMessage ? ` (${this.statusMessage})`: "") +
+            (this.statusMessage ? ` (${this.statusMessage})` : "") +
             (this.headers ? `, headers ${JSON.stringify(this.headers)}` : "") +
             (this.filePath ? ` and body from file ${this.filePath}` : "");
     }
@@ -622,6 +625,16 @@ export interface PassThroughHandlerOptions {
      * See {@link CallbackResponseMessageResult} for the possible fields that can be set.
      */
     beforeResponse?: (res: PassThroughResponse) => MaybePromise<CallbackResponseResult | void> | void;
+
+
+    /**
+     * A callback that will be passed the full request, incoming response stream
+     * from the remote server and ongoing response for the client.
+     *
+     * You must pipe the server response stream to the client response before
+     * returning.
+     */
+    beforeResponseStream?: (req: OngoingRequest, serverRes: http.IncomingMessage, clientRes: OngoingResponse) => void;
 }
 
 export interface RequestTransform {
@@ -819,6 +832,8 @@ export class PassThroughHandlerDefinition extends Serializable implements Reques
         MaybePromise<CallbackRequestResult | void> | void;
     public readonly beforeResponse?: (res: PassThroughResponse) =>
         MaybePromise<CallbackResponseResult | void> | void;
+    public readonly beforeResponseStream?: (req: OngoingRequest, serverRes: http.IncomingMessage,
+        clientRes: OngoingResponse) => void;
 
     public readonly proxyConfig?: ProxyConfig;
 
@@ -885,9 +900,18 @@ export class PassThroughHandlerDefinition extends Serializable implements Reques
             this.transformRequest = options.transformRequest;
         }
 
-        if (options.beforeResponse && options.transformResponse && !_.isEmpty(options.transformResponse)) {
-            throw new Error("BeforeResponse and transformResponse options are mutually exclusive");
-        } else if (options.beforeResponse) {
+        let numResponseOptions = 0;
+        if (options.beforeResponseStream) numResponseOptions++;
+        if (options.beforeResponse) numResponseOptions++;
+        if (options.transformResponse && !_.isEmpty(options.transformResponse)) numResponseOptions++;
+
+        if (numResponseOptions > 1) {
+            throw new Error("beforeResponseStream, beforeResponse and transformResponse options are mutually exclusive");
+        }
+        else if (options.beforeResponseStream) {
+            this.beforeResponseStream = options.beforeResponseStream;
+        }
+        else if (options.beforeResponse) {
             this.beforeResponse = options.beforeResponse;
         } else if (options.transformResponse) {
             if ([
